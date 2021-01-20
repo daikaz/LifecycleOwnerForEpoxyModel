@@ -6,30 +6,85 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import com.airbnb.epoxy.DataBindingEpoxyModel
 
-abstract class LifecyclerOwnerEpoxyModel : DataBindingEpoxyModel(), LifecycleOwner {
+abstract class LifecyclerOwnerEpoxyModel : EpoxyModelWithHolder<LifecyclerOwnerEpoxyModel.DataBindingHolder?>() {
 
-    private val lifecycleRegistry: LifecycleRegistry by lazy { LifecycleRegistry(this) }
-
-    init {
-        lifecycleRegistry.currentState = Lifecycle.State.INITIALIZED
+    override fun buildView(parent: ViewGroup): View {
+        val layoutInflater = LayoutInflater.from(parent.context)
+        val binding = DataBindingUtil.inflate<ViewDataBinding>(layoutInflater, viewType, parent, false)
+        val view = binding.root
+        view.tag = binding
+        return view
     }
 
-    override fun getLifecycle(): Lifecycle {
-        return lifecycleRegistry
+    override fun bind(holder: DataBindingHolder) {
+        holder.onBind()
+        setDataBindingVariables(holder.dataBinding)
+        holder.dataBinding!!.executePendingBindings()
     }
 
-    override fun onViewAttachedToWindow(holder: DataBindingHolder) {
-        super.onViewAttachedToWindow(holder)
-        lifecycleRegistry.currentState = Lifecycle.State.CREATED
+    /**
+     * This is called when the model is bound to a view, and the view's variables should be updated
+     * with the model's data. [ViewDataBinding.executePendingBindings] is called for you after
+     * this method is run.
+     *
+     *
+     * If you leave your class abstract and have a model generated for you via annotations this will
+     * be implemented for you. However, you may choose to implement this manually if you like.
+     */
+    protected abstract fun setDataBindingVariables(binding: ViewDataBinding?)
+
+    /**
+     * Similar to [.setDataBindingVariables], but this method only binds
+     * variables that have changed. The changed model comes from [.bind]. This will only be called if the model is used in an [EpoxyController]
+     *
+     *
+     * If you leave your class abstract and have a model generated for you via annotations this will
+     * be implemented for you. However, you may choose to implement this manually if you like.
+     */
+    protected fun setDataBindingVariables(
+        dataBinding: ViewDataBinding?,
+        previouslyBoundModel: EpoxyModel<*>?
+    ) {
+        setDataBindingVariables(dataBinding)
     }
 
-    override fun setDataBindingVariables(binding: ViewDataBinding?) {
-        lifecycleRegistry.currentState = Lifecycle.State.STARTED
-        lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+    protected fun setDataBindingVariables(dataBinding: ViewDataBinding?, payloads: List<Any?>?) {
+        setDataBindingVariables(dataBinding)
     }
 
-    override fun onViewDetachedFromWindow(holder: DataBindingHolder) {
-        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
-        super.onViewDetachedFromWindow(holder)
+    override fun unbind(holder: DataBindingHolder) {
+        holder.dataBinding!!.unbind()
+        holder.recycle()
     }
+
+    override fun createNewHolder(): DataBindingHolder? {
+        return DataBindingHolder()
+    }
+
+    class DataBindingHolder : EpoxyHolder(), LifecycleOwner {
+
+        private val lifecycleRegistry by lazy { LifecycleRegistry(this) }
+        var dataBinding: ViewDataBinding? = null
+            private set
+
+        override fun bindView(itemView: View) {
+            dataBinding = itemView.tag as ViewDataBinding
+        }
+        
+        fun recycle() {
+            lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+        }
+
+        fun onBind() {
+            if (lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+            }
+            lifecycleRegistry.currentState = Lifecycle.State.STARTED
+        }
+
+        override fun getLifecycle(): Lifecycle {
+            return lifecycleRegistry
+        }
+    }
+    
 }
